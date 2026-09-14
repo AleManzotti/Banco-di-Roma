@@ -253,6 +253,7 @@ function Btn({ variant = "primary", size = "md", className = "", ...props }) {
     ghost: "text-navy-300 hover:bg-navy-800 hover:text-navy-100",
     outline: "border border-navy-700 text-navy-200 hover:bg-navy-800",
     danger: "bg-rose-600 text-white hover:bg-rose-500",
+    success: "bg-emerald-600 text-white hover:bg-emerald-500",
   };
   return <button className={`${base} ${sizes[size]} ${variants[variant]} ${className}`} {...props} />;
 }
@@ -1696,6 +1697,10 @@ function ChequeForm({ db, onFinish, onCancel }) {
   const [amount, setAmount] = useState("");
   const [dueDate, setDueDate] = useState(addMonths(todayISO(), 1));
   const [errors, setErrors] = useState({});
+  const [fila, setFila] = useState([]);
+  const [revisao, setRevisao] = useState(null);
+
+  const cliente = db.customers.find((c) => c.id === customerId);
 
   const selecionarCliente = (id) => {
     setCustomerId(id);
@@ -1703,88 +1708,218 @@ function ChequeForm({ db, onFinish, onCancel }) {
     if (c && !issuerName.trim()) setIssuerName(c.name);
   };
 
-  const submit = () => {
+  const validar = () => {
     const e = {};
     if (!customerId) e.customerId = "Selecione o cliente.";
     if (!issuerName.trim()) e.issuerName = "Informe o nome do emitente.";
     if (!(Number(amount) > 0)) e.amount = "Informe o valor do cheque.";
     if (!dueDate) e.dueDate = "Informe a data para liquidar.";
     setErrors(e);
-    if (Object.keys(e).length === 0) {
-      onFinish({ customerId, issuerName: issuerName.trim(), amount: round2(Number(amount)), dueDate });
-    }
+    return Object.keys(e).length === 0;
   };
+
+  const itemAtual = () => ({
+    id: "q" + Date.now() + Math.random(),
+    customerId, customerLabel: `${cliente?.code} · ${cliente?.name}`,
+    issuerName: issuerName.trim(), amount: round2(Number(amount)), dueDate,
+  });
+
+  const adicionarNaFila = () => {
+    if (!validar()) return;
+    setFila((f) => [...f, itemAtual()]);
+    setAmount("");
+    setIssuerName(cliente?.name || "");
+    setDueDate(addMonths(todayISO(), 1));
+    setErrors({});
+  };
+
+  const removerDaFila = (id) => setFila((f) => f.filter((x) => x.id !== id));
+
+  const formTemDados = customerId || issuerName.trim() || amount;
+
+  const abrirRevisao = () => {
+    let lista = fila;
+    if (formTemDados) {
+      if (!validar()) return;
+      lista = [...fila, itemAtual()];
+    }
+    if (lista.length === 0) { setErrors({ customerId: "Adicione pelo menos um cheque antes de lançar." }); return; }
+    setRevisao(lista);
+  };
+
+  const totalPendente = fila.length + (formTemDados ? 1 : 0);
 
   return (
     <div className="space-y-5">
-      <section className="rounded-2xl border border-navy-800 bg-navy-900 p-5">
-        <Field label="Cliente" required error={errors.customerId} hint="O emitente abaixo já preenche com o nome do cliente, mas pode ser alterado">
-          <CustomerSelect customers={db.customers} value={customerId} onChange={selecionarCliente} />
-        </Field>
-      </section>
+      <div className="flex items-center justify-end">
+        <Btn onClick={abrirRevisao}><Landmark size={15} /> Lançar cheques{totalPendente > 0 ? ` (${totalPendente})` : ""}</Btn>
+      </div>
 
-      <div className="mx-auto max-w-3xl rounded-2xl border-2 border-amber-300 bg-gradient-to-br from-amber-50 to-amber-100 px-8 py-5 text-navy-900 shadow-2xl">
-        <div className="flex items-start justify-between border-b-2 border-dashed border-amber-300 pb-3">
-          <div className="flex items-center gap-2">
-            <Landmark size={20} className="text-amber-900" />
-            <div>
-              <p className="text-lg font-bold tracking-wide text-amber-900">BANCO ROMA</p>
-              <p className="text-xs text-amber-700">Agência 0001 · Conta-corrente</p>
+      <div className="grid gap-5 lg:grid-cols-[260px_1fr]">
+        <div className="order-2 lg:order-1">
+          <h3 className="mb-2 text-sm font-semibold text-navy-100">Lista de espera{fila.length > 0 ? ` (${fila.length})` : ""}</h3>
+          {fila.length === 0 ? (
+            <p className="text-xs text-navy-500">Os cheques que você adicionar com o + aparecem aqui, aguardando serem lançados junto.</p>
+          ) : (
+            <div className="max-h-[70vh] space-y-2 overflow-y-auto pr-1">
+              {fila.map((c) => (
+                <div key={c.id} className="group relative overflow-hidden rounded-lg border border-amber-300 bg-gradient-to-br from-amber-50 to-amber-100 px-3 py-2 text-navy-900 shadow">
+                  <button type="button" onClick={() => removerDaFila(c.id)}
+                    className="absolute right-1 top-1 rounded-full p-0.5 text-amber-700 hover:bg-amber-200">
+                    <X size={12} />
+                  </button>
+                  <p className="truncate pr-4 text-[11px] text-amber-700">{c.customerLabel}</p>
+                  <div className="mt-0.5 flex items-center justify-between gap-2">
+                    <span className="truncate text-sm font-semibold">{c.issuerName}</span>
+                    <span className="shrink-0 text-sm font-bold">{BRL(c.amount)}</span>
+                  </div>
+                  <p className="text-[11px] text-amber-700">Liquidar {fmtDate(c.dueDate)}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="order-1 space-y-5 lg:order-2">
+          <section className="rounded-2xl border border-navy-800 bg-navy-900 p-5">
+            <Field label="Cliente" required error={errors.customerId} hint="O emitente abaixo já preenche com o nome do cliente, mas pode ser alterado">
+              <CustomerSelect customers={db.customers} value={customerId} onChange={selecionarCliente} />
+            </Field>
+          </section>
+
+          <div className="relative mx-auto max-w-2xl">
+            <div className="absolute inset-0 translate-x-2 translate-y-2 rotate-1 rounded-2xl border-2 border-amber-200 bg-amber-50" />
+            <div className="absolute inset-0 translate-x-1 translate-y-1 -rotate-1 rounded-2xl border-2 border-amber-300 bg-amber-50" />
+            <button type="button" onClick={adicionarNaFila} title="Adicionar cheque à lista de espera"
+              className="absolute -right-3 -top-3 z-10 flex h-10 w-10 items-center justify-center rounded-full bg-gold-300 text-navy-950 shadow-lg hover:bg-gold-200">
+              <Plus size={18} />
+            </button>
+
+            <div className="relative rounded-2xl border-2 border-amber-300 bg-gradient-to-br from-amber-50 to-amber-100 px-8 py-5 text-navy-900 shadow-2xl">
+              <div className="flex items-start justify-between border-b-2 border-dashed border-amber-300 pb-3">
+                <div className="flex items-center gap-2">
+                  <Landmark size={20} className="text-amber-900" />
+                  <div>
+                    <p className="text-lg font-bold tracking-wide text-amber-900">BANCO ROMA</p>
+                    <p className="text-xs text-amber-700">Agência 0001 · Conta-corrente</p>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <p className="text-xs text-amber-700">Emissão</p>
+                  <p className="tabular-nums text-sm font-medium text-amber-900">{fmtDate(todayISO())}</p>
+                </div>
+              </div>
+
+              <div className="mt-4 flex items-center justify-between gap-4">
+                <p className="max-w-[55%] text-sm text-amber-800">Pague por este cheque a quantia de</p>
+                <div className="text-right">
+                  <p className="text-xs text-amber-700">Valor</p>
+                  <div className="flex items-center justify-end gap-1">
+                    <span className="text-lg font-bold text-amber-900">R$</span>
+                    <input type="number" min="0" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)}
+                      className="w-32 border-b-2 border-amber-400 bg-transparent text-right text-xl font-bold text-amber-900 placeholder-amber-400 focus:outline-none" placeholder="0,00" />
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-5 flex items-center gap-3">
+                <p className="shrink-0 text-xs text-amber-700">Nome do emitente</p>
+                <input value={issuerName} onChange={(e) => setIssuerName(e.target.value)}
+                  className="w-full border-b-2 border-amber-400 bg-transparent text-lg font-medium text-amber-900 placeholder-amber-400 focus:outline-none" placeholder="Nome de quem emite o cheque" />
+              </div>
+
+              <div className="mt-6 flex items-end justify-between gap-4">
+                <div className="min-w-0">
+                  {issuerName.trim() ? (
+                    <p className="truncate font-signature text-4xl leading-tight text-amber-900">{issuerName}</p>
+                  ) : (
+                    <p className="text-sm text-amber-400">assinatura aparece aqui</p>
+                  )}
+                  <p className="mt-0.5 text-xs text-amber-700">assinatura (meramente ilustrativa)</p>
+                </div>
+                <div className="shrink-0 text-right">
+                  <p className="text-xs text-amber-700">Bom para liquidar em</p>
+                  <DatePicker value={dueDate} onChange={setDueDate} light openRight className="w-36" />
+                </div>
+              </div>
+
+              <div className="mt-5 border-t-2 border-dashed border-amber-300 pt-2 text-center text-[10px] tracking-[0.2em] text-amber-500">
+                ⑆ 000123456 ⑆ 0001 ⑆ 00045678-9 ⑆
+              </div>
             </div>
           </div>
-          <div className="text-right">
-            <p className="text-xs text-amber-700">Emissão</p>
-            <p className="tabular-nums text-sm font-medium text-amber-900">{fmtDate(todayISO())}</p>
-          </div>
-        </div>
 
-        <div className="mt-4 flex items-center justify-between gap-4">
-          <p className="max-w-[55%] text-sm text-amber-800">Pague por este cheque a quantia de</p>
-          <div className="text-right">
-            <p className="text-xs text-amber-700">Valor</p>
-            <div className="flex items-center justify-end gap-1">
-              <span className="text-lg font-bold text-amber-900">R$</span>
-              <input type="number" min="0" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)}
-                className="w-32 border-b-2 border-amber-400 bg-transparent text-right text-xl font-bold text-amber-900 placeholder-amber-400 focus:outline-none" placeholder="0,00" />
-            </div>
-          </div>
-        </div>
+          {(errors.customerId || errors.amount || errors.issuerName || errors.dueDate) && (
+            <p className="mx-auto max-w-2xl text-sm text-rose-400">
+              {errors.customerId || errors.amount || errors.issuerName || errors.dueDate}
+            </p>
+          )}
 
-        <div className="mt-5 flex items-center gap-3">
-          <p className="shrink-0 text-xs text-amber-700">Nome do emitente</p>
-          <input value={issuerName} onChange={(e) => setIssuerName(e.target.value)}
-            className="w-full border-b-2 border-amber-400 bg-transparent text-lg font-medium text-amber-900 placeholder-amber-400 focus:outline-none" placeholder="Nome de quem emite o cheque" />
-        </div>
-
-        <div className="mt-6 flex items-end justify-between gap-4">
-          <div className="min-w-0">
-            {issuerName.trim() ? (
-              <p className="truncate font-signature text-4xl leading-tight text-amber-900">{issuerName}</p>
-            ) : (
-              <p className="text-sm text-amber-400">assinatura aparece aqui</p>
-            )}
-            <p className="mt-0.5 text-xs text-amber-700">assinatura (meramente ilustrativa)</p>
+          <div className="mx-auto flex max-w-2xl justify-start">
+            <Btn variant="outline" onClick={onCancel}>Cancelar</Btn>
           </div>
-          <div className="shrink-0 text-right">
-            <p className="text-xs text-amber-700">Bom para liquidar em</p>
-            <DatePicker value={dueDate} onChange={setDueDate} light openRight className="w-36" />
-          </div>
-        </div>
-
-        <div className="mt-5 border-t-2 border-dashed border-amber-300 pt-2 text-center text-[10px] tracking-[0.2em] text-amber-500">
-          ⑆ 000123456 ⑆ 0001 ⑆ 00045678-9 ⑆
         </div>
       </div>
 
-      {(errors.customerId || errors.amount || errors.issuerName || errors.dueDate) && (
-        <p className="mx-auto max-w-3xl text-sm text-rose-400">
-          {errors.customerId || errors.amount || errors.issuerName || errors.dueDate}
-        </p>
+      {revisao && (
+        <ChequeReviewModal lista={revisao} onClose={() => setRevisao(null)} onConfirm={onFinish} />
       )}
+    </div>
+  );
+}
 
-      <div className="mx-auto flex max-w-3xl justify-end gap-2">
-        <Btn variant="outline" onClick={onCancel}>Cancelar</Btn>
-        <Btn onClick={submit}>Lançar cheque</Btn>
+function ChequeReviewModal({ lista, onClose, onConfirm }) {
+  const [idx, setIdx] = useState(0);
+  const [enviando, setEnviando] = useState(false);
+  const c = lista[idx];
+
+  const confirmar = async () => {
+    setEnviando(true);
+    await onConfirm(lista);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
+      <div className="w-full max-w-2xl rounded-2xl border border-navy-800 bg-navy-900 p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <h3 className="text-center text-lg font-semibold text-navy-50">Os cheques estão certos?</h3>
+        <p className="mt-1 text-center text-sm text-navy-400">{idx + 1} de {lista.length}</p>
+
+        <div className="mt-5 flex items-center gap-3">
+          <button type="button" onClick={() => setIdx((i) => Math.max(0, i - 1))} disabled={idx === 0}
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-navy-700 text-navy-300 hover:bg-navy-800 disabled:opacity-30">
+            <ChevronLeft size={18} />
+          </button>
+
+          <div className="flex-1 rounded-2xl border-2 border-amber-300 bg-gradient-to-br from-amber-50 to-amber-100 px-6 py-4 text-navy-900 shadow-xl">
+            <p className="text-xs text-amber-700">{c.customerLabel}</p>
+            <div className="mt-2 flex items-center justify-between gap-4">
+              <p className="max-w-[55%] text-sm text-amber-800">Pague por este cheque a quantia de</p>
+              <p className="text-xl font-bold text-amber-900">{BRL(c.amount)}</p>
+            </div>
+            <div className="mt-4 flex items-end justify-between gap-4">
+              <div className="min-w-0">
+                <p className="truncate font-signature text-3xl leading-tight text-amber-900">{c.issuerName}</p>
+                <p className="text-xs text-amber-700">emitente</p>
+              </div>
+              <div className="shrink-0 text-right">
+                <p className="text-xs text-amber-700">Bom para liquidar em</p>
+                <p className="text-lg font-medium tabular-nums text-amber-900">{fmtDate(c.dueDate)}</p>
+              </div>
+            </div>
+          </div>
+
+          <button type="button" onClick={() => setIdx((i) => Math.min(lista.length - 1, i + 1))} disabled={idx === lista.length - 1}
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-navy-700 text-navy-300 hover:bg-navy-800 disabled:opacity-30">
+            <ChevronRight size={18} />
+          </button>
+        </div>
+
+        <div className="mt-6 flex justify-end gap-2">
+          <Btn variant="outline" onClick={onClose} disabled={enviando}>Voltar e corrigir</Btn>
+          <Btn onClick={confirmar} disabled={enviando}>
+            {enviando ? "Lançando..." : `Confirmar${lista.length > 1 ? ` e lançar (${lista.length})` : " e lançar"}`}
+          </Btn>
+        </div>
       </div>
     </div>
   );
@@ -1794,7 +1929,7 @@ function ChequeForm({ db, onFinish, onCancel }) {
 /* detalhe do cheque                                                   */
 /* ------------------------------------------------------------------ */
 
-function ChequeDetail({ db, hoje, contract, index, go, onTornarDuplicata, onPostergarCheque, onDelete }) {
+function ChequeDetail({ db, hoje, contract, index, go, onTornarDuplicata, onPostergarCheque, onDelete, onQuitar }) {
   const inf = index.get(contract.id);
   const cliente = db.customers.find((c) => c.id === contract.customerId);
   const inst = inf.list[0];
@@ -1802,6 +1937,8 @@ function ChequeDetail({ db, hoje, contract, index, go, onTornarDuplicata, onPost
   const [confirmDuplicata, setConfirmDuplicata] = useState(false);
   const [postergarOpen, setPostergarOpen] = useState(false);
   const [confirmDel, setConfirmDel] = useState(false);
+  const [confirmQuitar, setConfirmQuitar] = useState(false);
+  const quitado = inf.status === "Quitado";
 
   return (
     <div className="space-y-5">
@@ -1856,10 +1993,26 @@ function ChequeDetail({ db, hoje, contract, index, go, onTornarDuplicata, onPost
         </div>
         <div className="flex flex-wrap gap-2">
           <Btn variant="ghost" onClick={() => setConfirmDel(true)}><Trash2 size={14} /> Excluir</Btn>
-          <Btn variant="outline" onClick={() => setPostergarOpen(true)}>Postergar</Btn>
-          <Btn onClick={() => setConfirmDuplicata(true)}>Torná-lo uma duplicata</Btn>
+          <Btn variant="outline" onClick={() => setPostergarOpen(true)} disabled={quitado}>Postergar</Btn>
+          <Btn onClick={() => setConfirmDuplicata(true)} disabled={quitado}>Torná-lo uma duplicata</Btn>
+          <Btn variant="success" onClick={() => setConfirmQuitar(true)} disabled={quitado}>
+            <CheckCircle2 size={14} /> {quitado ? "Já liquidado" : "Liquidar cheque"}
+          </Btn>
         </div>
       </div>
+
+      {confirmQuitar && (
+        <Modal title="Liquidar cheque?" subtitle="O cheque será marcado como pago e o saldo devedor vai a zero." onClose={() => setConfirmQuitar(false)}>
+          <div className="rounded-xl border border-emerald-800 bg-emerald-950 p-3 text-sm text-emerald-300">
+            <CheckCircle2 size={16} className="mb-1 inline" />{" "}
+            Confirma o recebimento de {BRL(inf.saldo)} de {cliente?.name} referente a este cheque?
+          </div>
+          <div className="mt-5 flex justify-end gap-2">
+            <Btn variant="outline" onClick={() => setConfirmQuitar(false)}>Cancelar</Btn>
+            <Btn variant="success" onClick={() => { onQuitar(contract.id); setConfirmQuitar(false); }}>Confirmar liquidação</Btn>
+          </div>
+        </Modal>
+      )}
 
       {confirmDuplicata && (
         <Modal title="Transformar em duplicata?" subtitle="Aviso: essa ação não pode ser desfeita." onClose={() => setConfirmDuplicata(false)}>
@@ -2672,25 +2825,34 @@ function MainApp({ usuario, onLogout }) {
     go("contratos");
   };
 
-  const finishCheque = async ({ customerId, issuerName, amount, dueDate }) => {
-    const number = await proximoNumeroContrato();
-    const batch = writeBatch(fsdb);
-    const contractRef = doc(collection(fsdb, "contracts"));
-    batch.set(contractRef, {
-      number, customerId, beneficiaryName: issuerName, issuerName,
-      type: "Cheque", requestedAmount: amount, interestRate: 0, contractValue: amount,
-      installmentCount: 1, installmentAmount: amount,
-      issueDate: hoje, firstPaymentDate: dueDate,
-      createdBy: usuario, createdAt: hoje + "T" + new Date().toTimeString().slice(0, 5),
+  const finishChequesBatch = async (lista) => {
+    const inicio = await runTransaction(fsdb, async (tx) => {
+      const ref = doc(fsdb, "meta", "contadores");
+      const snap = await tx.get(ref);
+      const atual = snap.exists() && typeof snap.data().contrato === "number" ? snap.data().contrato : 201;
+      tx.set(ref, { contrato: atual + lista.length }, { merge: true });
+      return atual;
     });
-    const instRef = doc(collection(fsdb, "installments"));
-    batch.set(instRef, { number: 1, dueDate, originalAmount: amount, interestAmount: 0, paidAmount: 0, contractId: contractRef.id, canceled: false });
-    addAudit(batch, {
-      entityType: "contrato", entityId: contractRef.id, action: "Cheque lançado",
-      detail: `${BRL(amount)} · emitente ${issuerName} · liquidar em ${fmtDate(dueDate)}`,
+    const batch = writeBatch(fsdb);
+    lista.forEach((c, idx) => {
+      const number = String(inicio + idx);
+      const contractRef = doc(collection(fsdb, "contracts"));
+      batch.set(contractRef, {
+        number, customerId: c.customerId, beneficiaryName: c.issuerName, issuerName: c.issuerName,
+        type: "Cheque", requestedAmount: c.amount, interestRate: 0, contractValue: c.amount,
+        installmentCount: 1, installmentAmount: c.amount,
+        issueDate: hoje, firstPaymentDate: c.dueDate,
+        createdBy: usuario, createdAt: hoje + "T" + new Date().toTimeString().slice(0, 5),
+      });
+      const instRef = doc(collection(fsdb, "installments"));
+      batch.set(instRef, { number: 1, dueDate: c.dueDate, originalAmount: c.amount, interestAmount: 0, paidAmount: 0, contractId: contractRef.id, canceled: false });
+      addAudit(batch, {
+        entityType: "contrato", entityId: contractRef.id, action: "Cheque lançado",
+        detail: `${BRL(c.amount)} · emitente ${c.issuerName} · liquidar em ${fmtDate(c.dueDate)}`,
+      });
     });
     await batch.commit();
-    setToast("Cheque lançado.");
+    setToast(lista.length > 1 ? `${lista.length} cheques lançados.` : "Cheque lançado.");
     go("contratos");
   };
 
@@ -3016,11 +3178,11 @@ function MainApp({ usuario, onLogout }) {
             <ContractWizard db={db} presetCustomer={route.customerId} onFinish={finishContract} onCancel={() => go("contratos")} />
           )}
           {route.page === "cheque-novo" && (
-            <ChequeForm db={db} onFinish={finishCheque} onCancel={() => go("contratos")} />
+            <ChequeForm db={db} onFinish={finishChequesBatch} onCancel={() => go("contratos")} />
           )}
           {route.page === "contrato" && contract && contract.type === "Cheque" && (
             <ChequeDetail key={contract.id} db={db} hoje={hoje} contract={contract} index={index} go={go}
-              onTornarDuplicata={tornarDuplicata} onPostergarCheque={postergarCheque} onDelete={deleteContract} />
+              onTornarDuplicata={tornarDuplicata} onPostergarCheque={postergarCheque} onDelete={deleteContract} onQuitar={quitarContrato} />
           )}
           {route.page === "contrato" && contract && contract.type !== "Cheque" && (
             <ContractDetail key={contract.id} db={db} hoje={hoje} contract={contract} index={index} go={go} onPay={registerPayment} onDelete={deleteContract} onUpdateValue={updateContractValue} onUpdateBeneficiary={updateBeneficiary} onPagarJuros={pagarJuros} onPostergarLivre={postergarCheque} onNovoVencimento={novoVencimento} onRecalcularParcelas={recalcularParcelas} onUpdateDuplicataDueDate={updateDuplicataDueDate} />
