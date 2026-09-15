@@ -2119,25 +2119,24 @@ function ContractDetail({ db, hoje, contract, index, go, onPay, onDelete, onUpda
         <div className="rounded-2xl border border-navy-800 bg-navy-900 p-5 lg:col-span-2">
           <div className="flex items-start justify-between">
             <div>
-              <p className="text-xs text-navy-500">Cliente</p>
-              <h2 className="text-xl font-semibold text-navy-50">{cliente?.name}</h2>
+              <p className="text-xs text-navy-500">Beneficiário</p>
               {editandoBenef ? (
-                <div className="mt-1 flex items-center gap-1.5">
-                  <span className="text-sm text-navy-400">Beneficiário:</span>
+                <div className="flex items-center gap-1.5">
                   <input autoFocus value={benefInput} onChange={(e) => setBenefInput(e.target.value)}
                     onKeyDown={(e) => { if (e.key === "Enter") salvarBenef(); if (e.key === "Escape") setEditandoBenef(false); }}
-                    className="rounded-lg border border-navy-700 bg-navy-800 px-2 py-0.5 text-sm text-navy-100 focus:border-gold-500 focus:outline-none" />
+                    className="rounded-lg border border-navy-700 bg-navy-800 px-2 py-1 text-xl font-semibold text-navy-100 focus:border-gold-500 focus:outline-none" />
                   <button onClick={salvarBenef} className="rounded-lg p-1 text-gold-400 hover:bg-navy-800"><CheckCircle2 size={15} /></button>
                   <button onClick={() => setEditandoBenef(false)} className="rounded-lg p-1 text-navy-500 hover:bg-navy-800"><X size={15} /></button>
                 </div>
               ) : (
-                <p className="mt-1 flex items-center gap-1.5 text-sm text-navy-400">
-                  Beneficiário: {benefName}
+                <h2 className="flex items-center gap-1.5 text-xl font-semibold text-navy-50">
+                  {benefName}
                   <button onClick={() => { setBenefInput(benefName); setEditandoBenef(true); }} className="text-navy-500 hover:text-gold-400">
                     <Pencil size={13} />
                   </button>
-                </p>
+                </h2>
               )}
+              <p className="mt-1 text-sm text-navy-400">Cliente: {cliente?.name}</p>
             </div>
             <Badge>{inf.status}</Badge>
           </div>
