@@ -1113,15 +1113,12 @@ function useContractIndex(db, hoje) {
     });
     const pagoPorContrato = new Map();
     db.payments.filter((p) => p.kind !== "juros").forEach((p) => pagoPorContrato.set(p.contractId, round2((pagoPorContrato.get(p.contractId) || 0) + p.amount)));
-    const jurosPorContrato = new Map();
-    db.payments.filter((p) => p.kind === "juros").forEach((p) => jurosPorContrato.set(p.contractId, round2((jurosPorContrato.get(p.contractId) || 0) + p.amount)));
     const info = new Map();
     db.contracts.forEach((k) => {
       const list = (byContract.get(k.id) || []).sort((a, b) => a.number - b.number);
       const valorContrato = round2(k.contractValue ?? k.requestedAmount);
       const pago = pagoPorContrato.get(k.id) || 0;
-      const jurosPago = jurosPorContrato.get(k.id) || 0;
-      const saldo = round2(Math.max(0, valorContrato - pago + jurosPago));
+      const saldo = round2(Math.max(0, valorContrato - pago));
       const abertas = list.filter((i) => !i.canceled && saldoOf(i) > 0);
       const vencidas = abertas.filter((i) => daysBetween(hoje, i.dueDate) < 0);
       const prox = abertas.map((i) => i.dueDate).sort()[0] || null;
@@ -2112,7 +2109,7 @@ function ContractDetail({ db, hoje, contract, index, go, onPay, onDelete, onUpda
     setSaldoInput(raw);
     const novoSaldo = Number(raw);
     if (!(novoSaldo >= 0)) return;
-    onUpdateValue(contract.id, round2(novoSaldo + pagoContrato - jurosPagoContrato));
+    onUpdateValue(contract.id, round2(novoSaldo + pagoContrato));
   };
   const linkWhats = linkWhatsappContrato(cliente, benefName, inf, hoje);
 
@@ -2992,9 +2989,8 @@ function MainApp({ usuario, onLogout }) {
     const contract = db.contracts.find((k) => k.id === id);
     const insts = db.installments.filter((i) => i.contractId === id && !i.canceled);
     const pagoAntes = round2(db.payments.filter((p) => p.contractId === id && p.kind !== "juros").reduce((s, p) => s + p.amount, 0));
-    const jurosPagoAntes = round2(db.payments.filter((p) => p.contractId === id && p.kind === "juros").reduce((s, p) => s + p.amount, 0));
     const valorContrato = round2(contract.contractValue ?? contract.requestedAmount);
-    const restante = round2(Math.max(0, valorContrato - pagoAntes + jurosPagoAntes));
+    const restante = round2(Math.max(0, valorContrato - pagoAntes));
     const batch = writeBatch(fsdb);
     if (restante > 0) {
       const alvo = insts.find((i) => saldoOf(i) > 0) || insts[insts.length - 1];
