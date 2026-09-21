@@ -2927,10 +2927,11 @@ function MainApp({ usuario, onLogout }) {
     const quitada = novoPago >= round2(inst.originalAmount) - 0.004;
     const renovaDuplicata = quitada && contract?.type === "Duplicata";
     const batch = writeBatch(fsdb);
+    const contractUpdate = {};
     if (renovaDuplicata) {
       const novaData = addMonths(inst.dueDate, 1);
       batch.update(doc(fsdb, "installments", p.installmentId), { paidAmount: 0, dueDate: novaData });
-      batch.update(doc(fsdb, "contracts", p.contractId), { firstPaymentDate: novaData });
+      contractUpdate.firstPaymentDate = novaData;
     } else {
       batch.update(doc(fsdb, "installments", p.installmentId), { paidAmount: novoPago });
     }
@@ -2941,6 +2942,11 @@ function MainApp({ usuario, onLogout }) {
     if (jurosVal > 0) {
       const ref = doc(collection(fsdb, "payments"));
       batch.set(ref, { installmentId: p.installmentId, contractId: p.contractId, customerId: p.customerId, date: p.date, amount: jurosVal, method: p.method, kind: "juros", createdBy: usuario });
+      const valorAtual = round2(contract?.contractValue ?? contract?.requestedAmount ?? 0);
+      contractUpdate.contractValue = round2(valorAtual + jurosVal);
+    }
+    if (Object.keys(contractUpdate).length > 0) {
+      batch.update(doc(fsdb, "contracts", p.contractId), contractUpdate);
     }
     addAudit(batch, {
       entityType: "contrato", entityId: p.contractId,
@@ -2960,10 +2966,13 @@ function MainApp({ usuario, onLogout }) {
   const pagarJuros = async ({ installmentId, contractId, customerId, date, method, valor, postergar }) => {
     const jv = round2(Number(valor) || 0);
     const inst = db.installments.find((i) => i.id === installmentId);
+    const contract = db.contracts.find((k) => k.id === contractId);
     const batch = writeBatch(fsdb);
     if (jv > 0) {
       const ref = doc(collection(fsdb, "payments"));
       batch.set(ref, { installmentId, contractId, customerId, date, amount: jv, method, kind: "juros", createdBy: usuario });
+      const valorAtual = round2(contract?.contractValue ?? contract?.requestedAmount ?? 0);
+      batch.update(doc(fsdb, "contracts", contractId), { contractValue: round2(valorAtual + jv) });
     }
     let novaData = null;
     if (postergar) {
