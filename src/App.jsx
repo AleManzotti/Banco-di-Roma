@@ -2105,6 +2105,7 @@ function ContractDetail({ db, hoje, contract, index, go, onPay, onDelete, onUpda
   const jurosPagoContrato = round2(pagamentos.filter((p) => p.kind === "juros").reduce((s, p) => s + p.amount, 0));
   const jurosDe = (installmentId) => round2(pagamentos.filter((p) => p.installmentId === installmentId && p.kind === "juros").reduce((s, p) => s + p.amount, 0));
   const [saldoInput, setSaldoInput] = useState(() => String(inf.saldo));
+  useEffect(() => { setSaldoInput(String(inf.saldo)); }, [inf.saldo]);
   const ajustarSaldo = (raw) => {
     setSaldoInput(raw);
     const novoSaldo = Number(raw);
