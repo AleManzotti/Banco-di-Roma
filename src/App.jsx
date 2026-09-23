@@ -2967,13 +2967,10 @@ function MainApp({ usuario, onLogout }) {
   const pagarJuros = async ({ installmentId, contractId, customerId, date, method, valor, postergar }) => {
     const jv = round2(Number(valor) || 0);
     const inst = db.installments.find((i) => i.id === installmentId);
-    const contract = db.contracts.find((k) => k.id === contractId);
     const batch = writeBatch(fsdb);
     if (jv > 0) {
       const ref = doc(collection(fsdb, "payments"));
       batch.set(ref, { installmentId, contractId, customerId, date, amount: jv, method, kind: "juros", createdBy: usuario });
-      const valorAtual = round2(contract?.contractValue ?? contract?.requestedAmount ?? 0);
-      batch.update(doc(fsdb, "contracts", contractId), { contractValue: round2(valorAtual + jv) });
     }
     let novaData = null;
     if (postergar) {
