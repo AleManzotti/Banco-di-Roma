@@ -698,7 +698,7 @@ function ChartTip({ active, payload, label }) {
   );
 }
 
-function Dashboard({ db, hoje, go }) {
+function Dashboard({ db, hoje, go, index }) {
   const stats = useMemo(() => {
     let vencido = 0, hojeV = 0, futuro = 0;
     db.installments.forEach((i) => {
@@ -709,12 +709,13 @@ function Dashboard({ db, hoje, go }) {
       else if (d === 0) hojeV += s;
       else futuro += s;
     });
+    const total = db.contracts.reduce((s, k) => s + (index.get(k.id)?.saldo || 0), 0);
     return {
       vencido, hoje: hojeV, futuro,
-      total: vencido + hojeV + futuro,
+      total: round2(total),
       ativos: db.customers.filter((c) => c.active).length,
     };
-  }, [db, hoje]);
+  }, [db, hoje, index]);
 
   const vencimentos = useMemo(() => {
     const map = new Map();
@@ -3166,7 +3167,7 @@ function MainApp({ usuario, onLogout }) {
             )}
           </div>
 
-          {route.page === "resumo" && <Dashboard db={db} hoje={hoje} go={go} />}
+          {route.page === "resumo" && <Dashboard db={db} hoje={hoje} go={go} index={index} />}
           {route.page === "clientes" && (
             <CustomersPage db={db} go={go} onDelete={deleteCustomer} cols={cols} setCols={setCols} onSaveCols={() => salvarColunas("clientes", cols)} />
           )}
