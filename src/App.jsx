@@ -260,6 +260,7 @@ function Btn({ variant = "primary", size = "md", className = "", ...props }) {
     outline: "border border-navy-700 text-navy-200 hover:bg-navy-800",
     danger: "bg-rose-600 text-white hover:bg-rose-500",
     success: "bg-emerald-600 text-white hover:bg-emerald-500",
+    info: "bg-blue-600 text-white hover:bg-blue-500",
   };
   return <button className={`${base} ${sizes[size]} ${variants[variant]} ${className}`} {...props} />;
 }
@@ -2095,8 +2096,8 @@ function PostergarChequeModal({ installment, contract, onClose, onConfirm }) {
 function ChequeStaticCard({ contract, inst, cliente, valor }) {
   const emitente = contract.issuerName || contract.beneficiaryName;
   return (
-    <div className="rounded-2xl border-2 border-amber-300 bg-gradient-to-br from-amber-50 to-amber-100 px-6 py-5 text-navy-900 shadow-2xl sm:px-8">
-      <div className="flex items-start justify-between border-b-2 border-dashed border-amber-300 pb-3">
+    <div className="rounded-2xl border-2 border-amber-300 bg-gradient-to-br from-amber-50 to-amber-100 px-8 py-4 text-navy-900 shadow-2xl sm:px-10">
+      <div className="flex items-start justify-between border-b-2 border-dashed border-amber-300 pb-2.5">
         <div className="flex items-center gap-2">
           <Landmark size={20} className="text-amber-900" />
           <div>
@@ -2109,15 +2110,15 @@ function ChequeStaticCard({ contract, inst, cliente, valor }) {
           <p className="text-sm font-medium text-amber-900">{cliente?.code} · {cliente?.name}</p>
         </div>
       </div>
-      <div className="mt-4 flex items-center justify-between gap-4">
+      <div className="mt-3 flex items-center justify-between gap-4">
         <p className="max-w-[55%] text-sm text-amber-800">Pague por este cheque a quantia de</p>
         <p className="text-xl font-bold text-amber-900">{BRL(valor)}</p>
       </div>
-      <div className="mt-5">
+      <div className="mt-3">
         <p className="text-xs text-amber-700">Nome do emitente</p>
         <p className="text-lg font-medium text-amber-900">{emitente}</p>
       </div>
-      <div className="mt-6 flex items-end justify-between gap-4">
+      <div className="mt-3 flex items-end justify-between gap-4">
         <div className="min-w-0">
           <p className="truncate font-signature text-4xl leading-tight text-amber-900">{emitente}</p>
           <p className="mt-0.5 text-xs text-amber-700">assinatura (meramente ilustrativa)</p>
@@ -2127,7 +2128,7 @@ function ChequeStaticCard({ contract, inst, cliente, valor }) {
           <p className="text-lg font-medium tabular-nums text-amber-900">{fmtDate(inst?.dueDate)}</p>
         </div>
       </div>
-      <div className="mt-5 border-t-2 border-dashed border-amber-300 pt-2 text-center text-[10px] tracking-[0.2em] text-amber-500">
+      <div className="mt-3 border-t-2 border-dashed border-amber-300 pt-2 text-center text-[10px] tracking-[0.2em] text-amber-500">
         ⑆ 000123456 ⑆ 0001 ⑆ 00045678-9 ⑆
       </div>
     </div>
@@ -2136,6 +2137,7 @@ function ChequeStaticCard({ contract, inst, cliente, valor }) {
 
 function ChequesPage({ db, hoje, index, go }) {
   const [busca, setBusca] = useState("");
+  const [soHoje, setSoHoje] = useState(false);
   const [idx, setIdx] = useState(0);
   const [anim, setAnim] = useState(null);
 
@@ -2148,14 +2150,14 @@ function ChequesPage({ db, hoje, index, go }) {
   }, [db, index]);
 
   const termo = busca.trim().toLowerCase();
-  const filtrados = termo
-    ? todos.filter((x) =>
+  const filtrados = todos
+    .filter((x) => !soHoje || daysBetween(hoje, x.inf.proximoVencimento) === 0)
+    .filter((x) => !termo ||
         x.cliente?.name?.toLowerCase().includes(termo) ||
         String(x.cliente?.code || "").toLowerCase().includes(termo) ||
-        (x.contract.beneficiaryName || "").toLowerCase().includes(termo))
-    : todos;
+        (x.contract.beneficiaryName || "").toLowerCase().includes(termo));
 
-  useEffect(() => { setIdx(0); }, [busca]);
+  useEffect(() => { setIdx(0); }, [busca, soHoje]);
   useEffect(() => {
     if (idx > filtrados.length - 1) setIdx(Math.max(0, filtrados.length - 1));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -2178,9 +2180,15 @@ function ChequesPage({ db, hoje, index, go }) {
         <p className="mt-1.5 text-sm text-navy-400">{filtrados.length} cheque{filtrados.length === 1 ? "" : "s"}</p>
       </div>
 
-      <div className="relative mx-auto max-w-sm">
-        <Search size={15} className="pointer-events-none absolute left-3 top-2.5 text-navy-500" />
-        <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar por cliente..." className={`${inputCls} pl-9`} />
+      <div className="mx-auto flex max-w-md items-center gap-2">
+        <div className="relative flex-1">
+          <Search size={15} className="pointer-events-none absolute left-3 top-2.5 text-navy-500" />
+          <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar por cliente..." className={`${inputCls} pl-9`} />
+        </div>
+        <button type="button" onClick={() => setSoHoje((v) => !v)}
+          className={`shrink-0 whitespace-nowrap rounded-lg border px-3 py-2 text-sm transition-colors ${soHoje ? "border-gold-500 bg-gold-950 text-gold-300" : "border-navy-700 text-navy-300 hover:bg-navy-800"}`}>
+          Vencem hoje
+        </button>
       </div>
 
       {filtrados.length === 0 ? (
@@ -2194,7 +2202,7 @@ function ChequesPage({ db, hoje, index, go }) {
               <ChevronLeft size={18} />
             </button>
 
-            <div className="relative w-full max-w-xl overflow-hidden py-2">
+            <div className="relative w-full max-w-2xl overflow-hidden py-2">
               <div className="pointer-events-none absolute inset-2 translate-x-2 translate-y-2 rotate-1 rounded-2xl border-2 border-amber-200 bg-amber-50" />
               <div className="pointer-events-none absolute inset-2 translate-x-1 translate-y-1 -rotate-1 rounded-2xl border-2 border-amber-300 bg-amber-50" />
               <button type="button" onClick={() => go("contrato", { contractId: atual.contract.id })}
@@ -2296,19 +2304,22 @@ function ChequeReminderModal({ db, hoje, index, usuario, perfil, contractIds, on
             const emitente = x.contract.issuerName || x.contract.beneficiaryName;
             const vencida = daysBetween(hoje, x.inf.proximoVencimento) < 0;
             return (
-              <div key={x.contract.id} className="flex flex-wrap items-center gap-3 rounded-xl border-2 border-amber-300 bg-gradient-to-br from-amber-50 to-amber-100 px-4 py-3 text-navy-900">
+              <div key={x.contract.id} className="flex flex-wrap items-center gap-3 rounded-xl border-2 border-amber-400 bg-gradient-to-br from-amber-100 to-amber-200 px-4 py-3 text-navy-900">
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-semibold">{x.cliente?.code} · {x.cliente?.name}</p>
-                  <p className="truncate text-xs text-amber-700">{emitente} · {BRL(x.inf.saldo)}</p>
-                  <p className={`text-xs font-medium ${vencida ? "text-rose-700" : "text-amber-700"}`}>
-                    {vencida ? "Vencido em" : "Vence"} {fmtDate(x.inf.proximoVencimento)}
+                  <p className="truncate text-xs text-amber-800">{emitente}</p>
+                </div>
+                <div className="shrink-0 text-right">
+                  <p className="text-lg font-bold tabular-nums text-navy-900">{BRL(x.inf.saldo)}</p>
+                  <p className={`text-xs font-bold ${vencida ? "text-rose-700" : "text-amber-800"}`}>
+                    {vencida ? "Vencido em " : "Vence "}{fmtDate(x.inf.proximoVencimento)}
                   </p>
                 </div>
                 <button type="button" onClick={() => toggleSelecionar(x.contract.id)} title={sel ? "Selecionado para quitar" : "Quitar"}
                   className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full shadow transition-colors ${sel ? "bg-navy-700 text-navy-400" : "bg-gradient-to-br from-[#FBE9A0] via-[#D4AF37] to-[#8A6A22] text-amber-950 hover:from-[#FFF3C4] hover:via-[#E8C15E] hover:to-[#9C7A29]"}`}>
                   {sel ? <CheckCircle2 size={16} /> : <DollarSign size={16} strokeWidth={2.5} />}
                 </button>
-                <Btn size="sm" variant="outline" onClick={() => setPostergando(x)}>Postergar</Btn>
+                <Btn size="sm" variant="info" onClick={() => setPostergando(x)}>Postergar</Btn>
               </div>
             );
           })}
