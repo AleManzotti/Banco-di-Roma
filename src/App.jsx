@@ -3,7 +3,7 @@ import {
   LayoutDashboard, Users, FileText, Wallet, Search, Bell, Plus,
   ChevronDown, ChevronLeft, ChevronRight, X, Trash2, Pencil,
   ArrowUpDown, Menu, AlertTriangle, CheckCircle2,
-  Settings2, ArrowLeft, Calendar, DollarSign, Landmark, LogOut, Download, MessageCircle,
+  Settings2, ArrowLeft, Calendar, DollarSign, Landmark, LogOut, Download, MessageCircle, Camera,
 } from "lucide-react";
 import {
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip,
@@ -24,6 +24,40 @@ import {
 const BRL = (v) =>
   (Number(v) || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const round2 = (v) => Math.round((Number(v) + Number.EPSILON) * 100) / 100;
+
+/* leitura de cheque por foto (OCR.space) */
+const OCR_SPACE_API_KEY = "K82675186388957";
+
+async function lerChequeFoto(file) {
+  const form = new FormData();
+  form.append("apikey", OCR_SPACE_API_KEY);
+  form.append("file", file);
+  form.append("language", "por");
+  form.append("OCREngine", "2");
+  form.append("scale", "true");
+
+  const res = await fetch("https://api.ocr.space/parse/image", { method: "POST", body: form });
+  const data = await res.json();
+  const texto = data?.ParsedResults?.[0]?.ParsedText || "";
+  const linhas = texto.split("\n").map((l) => l.trim()).filter(Boolean);
+
+  const matchValor = texto.match(/\d{1,3}(?:\.\d{3})*,\d{2}/);
+  const valor = matchValor ? Number(matchValor[0].replace(/\./g, "").replace(",", ".")) : null;
+
+  const matchData = texto.match(/(\d{2})\/(\d{2})\/(\d{2,4})/);
+  let data_ = null;
+  if (matchData) {
+    let [, d, m, a] = matchData;
+    if (a.length === 2) a = "20" + a;
+    data_ = `${a}-${m}-${d}`;
+  }
+
+  // o nome do titular normalmente vem impresso logo acima da linha do CPF
+  const idxCpf = linhas.findIndex((l) => /^CPF\b/i.test(l));
+  const nome = idxCpf > 0 ? linhas[idxCpf - 1] : "";
+
+  return { valor, data: data_, nome };
+}
 const todayISO = () => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -1707,6 +1741,9 @@ function ChequeForm({ db, onFinish, onCancel }) {
   const [errors, setErrors] = useState({});
   const [fila, setFila] = useState([]);
   const [revisao, setRevisao] = useState(null);
+  const [lendo, setLendo] = useState(0);
+  const [avisoFoto, setAvisoFoto] = useState("");
+  const fileInputRef = useRef(null);
 
   const cliente = db.customers.find((c) => c.id === customerId);
 
@@ -1743,6 +1780,41 @@ function ChequeForm({ db, onFinish, onCancel }) {
 
   const removerDaFila = (id) => setFila((f) => f.filter((x) => x.id !== id));
 
+  const editarItem = (item) => {
+    setCustomerId(item.customerId);
+    setIssuerName(item.issuerName);
+    setAmount(item.amount ? String(item.amount) : "");
+    setDueDate(item.dueDate);
+    setErrors({});
+    removerDaFila(item.id);
+  };
+
+  const processarFotos = async (fileList) => {
+    if (!customerId) { setErrors({ customerId: "Selecione o cliente antes de anexar as fotos." }); return; }
+    const arquivos = Array.from(fileList);
+    if (arquivos.length === 0) return;
+    setAvisoFoto("");
+    setLendo(arquivos.length);
+    const resultados = await Promise.all(arquivos.map((f) => lerChequeFoto(f).catch(() => null)));
+    setLendo(0);
+
+    const novos = resultados.map((r) => ({
+      id: "q" + Date.now() + Math.random(),
+      customerId, customerLabel: `${cliente?.code} · ${cliente?.name}`,
+      issuerName: r?.nome || "",
+      amount: r?.valor ? round2(r.valor) : 0,
+      dueDate: r?.data || addMonths(todayISO(), 1),
+    }));
+    setFila((f) => [...f, ...novos]);
+
+    const falhas = resultados.filter((r) => !r || !r.valor || !r.data || !r.nome).length;
+    setAvisoFoto(
+      falhas === 0
+        ? `${novos.length} cheque(s) lido(s). Confira cada um na lista de espera antes de lançar.`
+        : `${novos.length} cheque(s) lido(s), mas ${falhas} ficaram com algum campo em branco — clique neles na lista de espera pra completar.`
+    );
+  };
+
   const formTemDados = customerId || issuerName.trim() || amount;
 
   const abrirRevisao = () => {
@@ -1767,32 +1839,46 @@ function ChequeForm({ db, onFinish, onCancel }) {
         <div className="order-2 lg:order-1">
           <h3 className="mb-2 text-sm font-semibold text-navy-100">Lista de espera{fila.length > 0 ? ` (${fila.length})` : ""}</h3>
           {fila.length === 0 ? (
-            <p className="text-xs text-navy-500">Os cheques que você adicionar com o + aparecem aqui, aguardando serem lançados junto.</p>
+            <p className="text-xs text-navy-500">Os cheques que você adicionar com o + (ou ler por foto) aparecem aqui, aguardando serem lançados junto.</p>
           ) : (
             <div className="max-h-[70vh] space-y-2 overflow-y-auto pr-1">
-              {fila.map((c) => (
-                <div key={c.id} className="group relative overflow-hidden rounded-lg border border-amber-300 bg-gradient-to-br from-amber-50 to-amber-100 px-3 py-2 text-navy-900 shadow">
-                  <button type="button" onClick={() => removerDaFila(c.id)}
-                    className="absolute right-1 top-1 rounded-full p-0.5 text-amber-700 hover:bg-amber-200">
-                    <X size={12} />
+              {fila.map((c) => {
+                const incompleto = !c.issuerName.trim() || !(c.amount > 0) || !c.dueDate;
+                return (
+                  <button type="button" key={c.id} onClick={() => editarItem(c)} title="Toque pra editar"
+                    className={`group relative block w-full overflow-hidden rounded-lg border px-3 py-2 text-left text-navy-900 shadow transition-colors ${incompleto ? "border-rose-400 bg-gradient-to-br from-rose-50 to-amber-100 hover:from-rose-100" : "border-amber-300 bg-gradient-to-br from-amber-50 to-amber-100 hover:from-amber-100"}`}>
+                    <span onClick={(e) => { e.stopPropagation(); removerDaFila(c.id); }}
+                      className="absolute right-1 top-1 rounded-full p-0.5 text-amber-700 hover:bg-amber-200">
+                      <X size={12} />
+                    </span>
+                    <p className="truncate pr-4 text-[11px] text-amber-700">{c.customerLabel}</p>
+                    <div className="mt-0.5 flex items-center justify-between gap-2">
+                      <span className="truncate text-sm font-semibold">{c.issuerName || "(sem nome — toque pra completar)"}</span>
+                      <span className="shrink-0 text-sm font-bold">{c.amount > 0 ? BRL(c.amount) : "—"}</span>
+                    </div>
+                    <p className="text-[11px] text-amber-700">Liquidar {c.dueDate ? fmtDate(c.dueDate) : "—"}</p>
                   </button>
-                  <p className="truncate pr-4 text-[11px] text-amber-700">{c.customerLabel}</p>
-                  <div className="mt-0.5 flex items-center justify-between gap-2">
-                    <span className="truncate text-sm font-semibold">{c.issuerName}</span>
-                    <span className="shrink-0 text-sm font-bold">{BRL(c.amount)}</span>
-                  </div>
-                  <p className="text-[11px] text-amber-700">Liquidar {fmtDate(c.dueDate)}</p>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
 
         <div className="order-1 space-y-5 lg:order-2">
           <section className="rounded-2xl border border-navy-800 bg-navy-900 p-5">
-            <Field label="Cliente" required error={errors.customerId} hint="O emitente abaixo já preenche com o nome do cliente, mas pode ser alterado">
-              <CustomerSelect customers={db.customers} value={customerId} onChange={selecionarCliente} />
-            </Field>
+            <div className="flex items-end gap-3">
+              <Field label="Cliente" required error={errors.customerId} hint="O emitente abaixo já preenche com o nome do cliente, mas pode ser alterado" className="flex-1">
+                <CustomerSelect customers={db.customers} value={customerId} onChange={selecionarCliente} />
+              </Field>
+              <div className="shrink-0">
+                <input ref={fileInputRef} type="file" accept="image/*" capture="environment" multiple hidden
+                  onChange={(e) => { processarFotos(e.target.files); e.target.value = ""; }} />
+                <Btn type="button" variant="outline" disabled={lendo > 0} onClick={() => fileInputRef.current?.click()}>
+                  <Camera size={15} /> {lendo > 0 ? `Lendo ${lendo}...` : "Foto"}
+                </Btn>
+              </div>
+            </div>
+            {avisoFoto && <p className="mt-3 text-xs text-navy-400">{avisoFoto}</p>}
           </section>
 
           <div className="relative mx-auto max-w-2xl">
