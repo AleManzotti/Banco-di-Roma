@@ -28,6 +28,12 @@ const todayISO = () => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 };
+const saudacao = () => {
+  const h = new Date().getHours();
+  if (h < 12) return "Bom dia";
+  if (h < 18) return "Boa tarde";
+  return "Boa noite";
+};
 const fmtDate = (s) => (s ? s.split("-").reverse().join("/") : "—");
 const fmtDateTime = (s) => {
   if (!s) return "—";
@@ -2041,7 +2047,7 @@ function ChequeDetail({ db, hoje, contract, index, go, onTornarDuplicata, onPost
           </div>
           <div className="mt-5 flex justify-end gap-2">
             <Btn variant="outline" onClick={() => setConfirmDel(false)}>Cancelar</Btn>
-            <Btn variant="danger" onClick={() => { onDelete(contract.id); go("contratos"); }}>Excluir</Btn>
+            <Btn variant="danger" onClick={() => { onDelete(contract.id); go("cheques"); }}>Excluir</Btn>
           </div>
         </Modal>
       )}
@@ -2079,6 +2085,249 @@ function PostergarChequeModal({ installment, contract, onClose, onConfirm }) {
         </div>
       </div>
     </Modal>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* aba de cheques                                                      */
+/* ------------------------------------------------------------------ */
+
+function ChequeStaticCard({ contract, inst, cliente, valor }) {
+  const emitente = contract.issuerName || contract.beneficiaryName;
+  return (
+    <div className="rounded-2xl border-2 border-amber-300 bg-gradient-to-br from-amber-50 to-amber-100 px-6 py-5 text-navy-900 shadow-2xl sm:px-8">
+      <div className="flex items-start justify-between border-b-2 border-dashed border-amber-300 pb-3">
+        <div className="flex items-center gap-2">
+          <Landmark size={20} className="text-amber-900" />
+          <div>
+            <p className="text-lg font-bold tracking-wide text-amber-900">BANCO ROMA</p>
+            <p className="text-xs text-amber-700">Agência 0001 · Conta-corrente</p>
+          </div>
+        </div>
+        <div className="text-right">
+          <p className="text-xs text-amber-700">Cliente</p>
+          <p className="text-sm font-medium text-amber-900">{cliente?.code} · {cliente?.name}</p>
+        </div>
+      </div>
+      <div className="mt-4 flex items-center justify-between gap-4">
+        <p className="max-w-[55%] text-sm text-amber-800">Pague por este cheque a quantia de</p>
+        <p className="text-xl font-bold text-amber-900">{BRL(valor)}</p>
+      </div>
+      <div className="mt-5">
+        <p className="text-xs text-amber-700">Nome do emitente</p>
+        <p className="text-lg font-medium text-amber-900">{emitente}</p>
+      </div>
+      <div className="mt-6 flex items-end justify-between gap-4">
+        <div className="min-w-0">
+          <p className="truncate font-signature text-4xl leading-tight text-amber-900">{emitente}</p>
+          <p className="mt-0.5 text-xs text-amber-700">assinatura (meramente ilustrativa)</p>
+        </div>
+        <div className="shrink-0 text-right">
+          <p className="text-xs text-amber-700">Bom para liquidar em</p>
+          <p className="text-lg font-medium tabular-nums text-amber-900">{fmtDate(inst?.dueDate)}</p>
+        </div>
+      </div>
+      <div className="mt-5 border-t-2 border-dashed border-amber-300 pt-2 text-center text-[10px] tracking-[0.2em] text-amber-500">
+        ⑆ 000123456 ⑆ 0001 ⑆ 00045678-9 ⑆
+      </div>
+    </div>
+  );
+}
+
+function ChequesPage({ db, hoje, index, go }) {
+  const [busca, setBusca] = useState("");
+  const [idx, setIdx] = useState(0);
+  const [anim, setAnim] = useState(null);
+
+  const todos = useMemo(() => {
+    return db.contracts
+      .filter((c) => c.type === "Cheque")
+      .map((c) => ({ contract: c, inf: index.get(c.id), cliente: db.customers.find((x) => x.id === c.customerId) }))
+      .filter((x) => x.inf && x.inf.status !== "Quitado")
+      .sort((a, b) => (a.inf.proximoVencimento || "9999").localeCompare(b.inf.proximoVencimento || "9999"));
+  }, [db, index]);
+
+  const termo = busca.trim().toLowerCase();
+  const filtrados = termo
+    ? todos.filter((x) =>
+        x.cliente?.name?.toLowerCase().includes(termo) ||
+        String(x.cliente?.code || "").toLowerCase().includes(termo) ||
+        (x.contract.beneficiaryName || "").toLowerCase().includes(termo))
+    : todos;
+
+  useEffect(() => { setIdx(0); }, [busca]);
+  useEffect(() => {
+    if (idx > filtrados.length - 1) setIdx(Math.max(0, filtrados.length - 1));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filtrados.length]);
+
+  const total = round2(filtrados.reduce((s, x) => s + x.inf.saldo, 0));
+  const atual = filtrados[idx];
+
+  const navegar = (delta) => {
+    const novo = idx + delta;
+    if (novo < 0 || novo > filtrados.length - 1) return;
+    setAnim(delta > 0 ? "saiEsq" : "saiDir");
+    setTimeout(() => { setIdx(novo); setAnim(null); }, 170);
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="text-center">
+        <p className="text-5xl font-bold tabular-nums text-emerald-400">{BRL(total)}</p>
+        <p className="mt-1.5 text-sm text-navy-400">{filtrados.length} cheque{filtrados.length === 1 ? "" : "s"}</p>
+      </div>
+
+      <div className="relative mx-auto max-w-sm">
+        <Search size={15} className="pointer-events-none absolute left-3 top-2.5 text-navy-500" />
+        <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar por cliente..." className={`${inputCls} pl-9`} />
+      </div>
+
+      {filtrados.length === 0 ? (
+        <EmptyState title="Nenhum cheque em andamento" hint="Lance um novo cheque para começar."
+          action={<Btn onClick={() => go("cheque-novo", {})}><Plus size={15} /> Lançar Cheque</Btn>} />
+      ) : (
+        <>
+          <div className="flex items-center justify-center gap-2 sm:gap-4">
+            <button onClick={() => navegar(-1)} disabled={idx === 0}
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-navy-700 text-navy-300 hover:bg-navy-800 disabled:opacity-30">
+              <ChevronLeft size={18} />
+            </button>
+
+            <div className="relative w-full max-w-xl overflow-hidden py-2">
+              <div className="pointer-events-none absolute inset-2 translate-x-2 translate-y-2 rotate-1 rounded-2xl border-2 border-amber-200 bg-amber-50" />
+              <div className="pointer-events-none absolute inset-2 translate-x-1 translate-y-1 -rotate-1 rounded-2xl border-2 border-amber-300 bg-amber-50" />
+              <button type="button" onClick={() => go("contrato", { contractId: atual.contract.id })}
+                className={`relative block w-full text-left transition-all duration-150 ${anim === "saiEsq" ? "-translate-x-12 opacity-0" : anim === "saiDir" ? "translate-x-12 opacity-0" : "translate-x-0 opacity-100"}`}>
+                <ChequeStaticCard contract={atual.contract} inst={atual.inf.list[0]} cliente={atual.cliente} valor={atual.inf.saldo} />
+              </button>
+            </div>
+
+            <button onClick={() => navegar(1)} disabled={idx === filtrados.length - 1}
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-navy-700 text-navy-300 hover:bg-navy-800 disabled:opacity-30">
+              <ChevronRight size={18} />
+            </button>
+          </div>
+          <p className="text-center text-xs text-navy-500">{idx + 1} de {filtrados.length}</p>
+        </>
+      )}
+    </div>
+  );
+}
+
+function ChequeReminderModal({ db, hoje, index, usuario, perfil, contractIds, onQuitar, onPostergarCheque, onClose }) {
+  const [selecionados, setSelecionados] = useState(new Set());
+  const [confirmando, setConfirmando] = useState(false);
+  const [postergando, setPostergando] = useState(null);
+  const [enviando, setEnviando] = useState(false);
+
+  const itens = contractIds
+    .map((id) => {
+      const contract = db.contracts.find((c) => c.id === id);
+      const inf = contract ? index.get(contract.id) : null;
+      return contract && inf ? { contract, inf, inst: inf.list[0], cliente: db.customers.find((x) => x.id === contract.customerId) } : null;
+    })
+    .filter((x) => x && x.inf.status !== "Quitado")
+    .sort((a, b) => (a.inf.proximoVencimento || "9999").localeCompare(b.inf.proximoVencimento || "9999"));
+
+  if (itens.length === 0) return null;
+
+  const toggleSelecionar = (id) => {
+    setSelecionados((prev) => {
+      const novo = new Set(prev);
+      if (novo.has(id)) novo.delete(id); else novo.add(id);
+      return novo;
+    });
+  };
+
+  const selecionadosItens = itens.filter((x) => selecionados.has(x.contract.id));
+  const totalSelecionado = round2(selecionadosItens.reduce((s, x) => s + x.inf.saldo, 0));
+  const nome = perfil?.nomeUsuario || usuario;
+
+  const concluirLiquidacao = async () => {
+    setEnviando(true);
+    for (const x of selecionadosItens) await onQuitar(x.contract.id);
+    setEnviando(false);
+    onClose();
+  };
+
+  if (confirmando) {
+    return (
+      <div className="fixed inset-0 z-[60] flex items-center justify-center overflow-y-auto bg-black/70 p-4">
+        <div className="my-8 w-full max-w-lg rounded-2xl border border-navy-800 bg-navy-900 p-6 shadow-2xl">
+          <h3 className="text-center text-lg font-semibold text-navy-50">Confirmar liquidação</h3>
+          <p className="mt-1 text-center text-sm text-navy-400">{selecionadosItens.length} cheque(s) selecionado(s)</p>
+          <div className="mt-5 max-h-72 space-y-2 overflow-y-auto pr-1">
+            {selecionadosItens.map((x) => (
+              <div key={x.contract.id} className="flex items-center justify-between rounded-xl border border-navy-800 bg-navy-800 px-4 py-2.5 text-sm">
+                <div className="min-w-0">
+                  <p className="truncate font-medium text-navy-100">{x.cliente?.name}</p>
+                  <p className="truncate text-xs text-navy-500">{x.contract.issuerName || x.contract.beneficiaryName} · venc. {fmtDate(x.inf.proximoVencimento)}</p>
+                </div>
+                <p className="shrink-0 font-semibold tabular-nums text-navy-100">{BRL(x.inf.saldo)}</p>
+              </div>
+            ))}
+          </div>
+          <div className="mt-5 flex items-center justify-between rounded-xl border border-emerald-800 bg-emerald-950 px-4 py-3">
+            <span className="text-sm text-emerald-300">Total a liquidar</span>
+            <span className="text-lg font-bold tabular-nums text-emerald-300">{BRL(totalSelecionado)}</span>
+          </div>
+          <div className="mt-5 flex justify-end gap-2">
+            <Btn variant="outline" onClick={() => setConfirmando(false)} disabled={enviando}>Voltar</Btn>
+            <Btn variant="success" onClick={concluirLiquidacao} disabled={enviando}>
+              {enviando ? "Liquidando..." : "Concluir liquidação"}
+            </Btn>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center overflow-y-auto bg-black/70 p-4">
+      <div className="my-8 w-full max-w-2xl rounded-2xl border border-navy-800 bg-navy-900 p-6 shadow-2xl">
+        <h3 className="text-center text-lg font-semibold text-navy-50">
+          {saudacao()}, {nome}! Esses cheques estão vencidos ou para vencer.
+        </h3>
+
+        <div className="mt-5 max-h-[55vh] space-y-3 overflow-y-auto pr-1">
+          {itens.map((x) => {
+            const sel = selecionados.has(x.contract.id);
+            const emitente = x.contract.issuerName || x.contract.beneficiaryName;
+            const vencida = daysBetween(hoje, x.inf.proximoVencimento) < 0;
+            return (
+              <div key={x.contract.id} className="flex flex-wrap items-center gap-3 rounded-xl border-2 border-amber-300 bg-gradient-to-br from-amber-50 to-amber-100 px-4 py-3 text-navy-900">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold">{x.cliente?.code} · {x.cliente?.name}</p>
+                  <p className="truncate text-xs text-amber-700">{emitente} · {BRL(x.inf.saldo)}</p>
+                  <p className={`text-xs font-medium ${vencida ? "text-rose-700" : "text-amber-700"}`}>
+                    {vencida ? "Vencido em" : "Vence"} {fmtDate(x.inf.proximoVencimento)}
+                  </p>
+                </div>
+                <button type="button" onClick={() => toggleSelecionar(x.contract.id)} title={sel ? "Selecionado para quitar" : "Quitar"}
+                  className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full shadow transition-colors ${sel ? "bg-navy-700 text-navy-400" : "bg-gradient-to-br from-[#FBE9A0] via-[#D4AF37] to-[#8A6A22] text-amber-950 hover:from-[#FFF3C4] hover:via-[#E8C15E] hover:to-[#9C7A29]"}`}>
+                  {sel ? <CheckCircle2 size={16} /> : <DollarSign size={16} strokeWidth={2.5} />}
+                </button>
+                <Btn size="sm" variant="outline" onClick={() => setPostergando(x)}>Postergar</Btn>
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <Btn variant="outline" onClick={onClose}>Ver depois</Btn>
+          <Btn onClick={() => setConfirmando(true)} disabled={selecionados.size === 0}>
+            Concluir{selecionados.size > 0 ? ` (${selecionados.size})` : ""}
+          </Btn>
+        </div>
+      </div>
+
+      {postergando && (
+        <PostergarChequeModal installment={postergando.inst} contract={postergando.contract}
+          onClose={() => setPostergando(null)}
+          onConfirm={(p) => { onPostergarCheque(p); setPostergando(null); }} />
+      )}
+    </div>
   );
 }
 
@@ -2526,6 +2775,7 @@ const NAV = [
   { id: "resumo", label: "Resumo", icon: LayoutDashboard },
   { id: "clientes", label: "Clientes", icon: Users },
   { id: "contratos", label: "Contratos", icon: FileText },
+  { id: "cheques", label: "Cheques", icon: Landmark },
 ];
 
 const COLS_KEY = "sge-colunas-v1";
@@ -2642,6 +2892,9 @@ function MainApp({ usuario, onLogout }) {
   const [cols, setCols] = useState(DEFAULT_CUSTOMER_COLS);
   const [contractCols, setContractCols] = useState(DEFAULT_CONTRACT_COLS);
   const [perfilOpen, setPerfilOpen] = useState(false);
+  const [lembreteChecado, setLembreteChecado] = useState(false);
+  const [lembreteCheques, setLembreteCheques] = useState(null);
+  const [semChequeToast, setSemChequeToast] = useState(null);
   const hoje = todayISO();
 
   useEffect(() => {
@@ -2729,6 +2982,21 @@ function MainApp({ usuario, onLogout }) {
 
   const go = (page, params = {}) => { setRoute({ page, ...params }); setSidebar(false); };
   const index = useContractIndex(db || { contracts: [], installments: [], payments: [] }, hoje);
+
+  useEffect(() => {
+    if (!carregado || lembreteChecado) return;
+    setLembreteChecado(true);
+    const vencidos = db.contracts
+      .filter((c) => c.type === "Cheque")
+      .map((c) => ({ contract: c, inf: index.get(c.id) }))
+      .filter((x) => x.inf && x.inf.status !== "Quitado" && x.inf.proximoVencimento && daysBetween(hoje, x.inf.proximoVencimento) <= 0);
+    if (vencidos.length > 0) {
+      setLembreteCheques(vencidos.map((x) => x.contract.id));
+    } else {
+      setSemChequeToast(`${saudacao()}, ${perfil?.nomeUsuario || usuario}! Hoje não tem nenhum cheque vencido ou para vencer.`);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [carregado]);
 
   /* notificações */
   const notifs = useMemo(() => {
@@ -2854,7 +3122,7 @@ function MainApp({ usuario, onLogout }) {
     });
     await batch.commit();
     setToast(lista.length > 1 ? `${lista.length} cheques lançados.` : "Cheque lançado.");
-    go("contratos");
+    go("cheques");
   };
 
   const tornarDuplicata = async (id) => {
@@ -3060,6 +3328,7 @@ function MainApp({ usuario, onLogout }) {
     "cliente-form": [route.customerId ? "Editar cliente" : "Novo cliente", "Preencha os dados do cadastro."],
     contratos: ["Contratos", "Gerencie seus contratos."],
     "contrato-novo": ["Novo contrato", "Quatro etapas: solicitação, simulação, apresentação e fechamento."],
+    cheques: ["Cheques", "Seus cheques em andamento, por ordem de vencimento."],
     "cheque-novo": ["Lançar cheque", "Registre um cheque recebido como forma de pagamento."],
     contrato: ["Contrato", "Detalhes, parcelas e histórico."],
   };
@@ -3146,7 +3415,12 @@ function MainApp({ usuario, onLogout }) {
           <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
             <div>
               {["contrato", "contrato-novo", "cheque-novo", "cliente-form"].includes(route.page) && (
-                <button onClick={() => go(route.page === "cliente-form" ? "clientes" : "contratos")}
+                <button onClick={() => {
+                  if (route.page === "cliente-form") go("clientes");
+                  else if (route.page === "cheque-novo") go("cheques");
+                  else if (route.page === "contrato" && contract?.type === "Cheque") go("cheques");
+                  else go("contratos");
+                }}
                   className="mb-1 inline-flex items-center gap-1 text-xs text-navy-500 hover:text-navy-300">
                   <ArrowLeft size={13} /> Voltar
                 </button>
@@ -3160,10 +3434,10 @@ function MainApp({ usuario, onLogout }) {
             </div>
             {route.page === "clientes" && <Btn onClick={() => go("cliente-form", {})}><Plus size={15} /> Novo cliente</Btn>}
             {route.page === "contratos" && (
-              <div className="flex gap-2">
-                <Btn variant="outline" onClick={() => go("cheque-novo", {})}><Landmark size={15} /> Lançar Cheque</Btn>
-                <Btn onClick={() => go("contrato-novo", {})}><Plus size={15} /> Novo contrato</Btn>
-              </div>
+              <Btn onClick={() => go("contrato-novo", {})}><Plus size={15} /> Novo contrato</Btn>
+            )}
+            {route.page === "cheques" && (
+              <Btn onClick={() => go("cheque-novo", {})}><Plus size={15} /> Lançar Cheque</Btn>
             )}
           </div>
 
@@ -3184,8 +3458,11 @@ function MainApp({ usuario, onLogout }) {
           {route.page === "contrato-novo" && (
             <ContractWizard db={db} presetCustomer={route.customerId} onFinish={finishContract} onCancel={() => go("contratos")} />
           )}
+          {route.page === "cheques" && (
+            <ChequesPage db={db} hoje={hoje} index={index} go={go} />
+          )}
           {route.page === "cheque-novo" && (
-            <ChequeForm db={db} onFinish={finishChequesBatch} onCancel={() => go("contratos")} />
+            <ChequeForm db={db} onFinish={finishChequesBatch} onCancel={() => go("cheques")} />
           )}
           {route.page === "contrato" && contract && contract.type === "Cheque" && (
             <ChequeDetail key={contract.id} db={db} hoje={hoje} contract={contract} index={index} go={go}
@@ -3208,6 +3485,24 @@ function MainApp({ usuario, onLogout }) {
 
       {perfilOpen && (
         <PerfilModal usuario={usuario} perfil={perfil} onSave={salvarPerfil} onClose={() => setPerfilOpen(false)} onLogout={onLogout} />
+      )}
+
+      {semChequeToast && (
+        <div className="fixed bottom-4 right-4 z-50 flex max-w-xs items-start gap-2 rounded-xl border border-navy-700 bg-navy-900 px-4 py-3 text-sm text-navy-200 shadow-2xl">
+          <CheckCircle2 size={16} className="mt-0.5 shrink-0 text-emerald-400" />
+          <span>{semChequeToast}</span>
+          <button onClick={() => setSemChequeToast(null)} className="ml-1 shrink-0 text-navy-500 hover:text-navy-300"><X size={14} /></button>
+        </div>
+      )}
+
+      {lembreteCheques && lembreteCheques.length > 0 && (
+        <ChequeReminderModal
+          db={db} hoje={hoje} index={index} usuario={usuario} perfil={perfil}
+          contractIds={lembreteCheques}
+          onQuitar={quitarContrato}
+          onPostergarCheque={postergarCheque}
+          onClose={() => setLembreteCheques(null)}
+        />
       )}
 
     </div>
