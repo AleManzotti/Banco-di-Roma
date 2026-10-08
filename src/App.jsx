@@ -2158,16 +2158,15 @@ function ChequesPage({ db, hoje, index, go }) {
         (x.contract.beneficiaryName || "").toLowerCase().includes(termo));
 
   useEffect(() => { setIdx(0); }, [busca, soHoje]);
-  useEffect(() => {
-    if (idx > filtrados.length - 1) setIdx(Math.max(0, filtrados.length - 1));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filtrados.length]);
 
+  // idx pode ficar momentaneamente fora do novo tamanho da lista (filtro mudou,
+  // efeito acima ainda não rodou) — trava aqui pra nunca ler uma posição inválida.
+  const idxAtual = filtrados.length === 0 ? 0 : Math.min(idx, filtrados.length - 1);
+  const atual = filtrados[idxAtual] || null;
   const total = round2(filtrados.reduce((s, x) => s + x.inf.saldo, 0));
-  const atual = filtrados[idx];
 
   const navegar = (delta) => {
-    const novo = idx + delta;
+    const novo = idxAtual + delta;
     if (novo < 0 || novo > filtrados.length - 1) return;
     setAnim(delta > 0 ? "saiEsq" : "saiDir");
     setTimeout(() => { setIdx(novo); setAnim(null); }, 170);
@@ -2191,13 +2190,13 @@ function ChequesPage({ db, hoje, index, go }) {
         </button>
       </div>
 
-      {filtrados.length === 0 ? (
+      {!atual ? (
         <EmptyState title="Nenhum cheque em andamento" hint="Lance um novo cheque para começar."
           action={<Btn onClick={() => go("cheque-novo", {})}><Plus size={15} /> Lançar Cheque</Btn>} />
       ) : (
         <>
           <div className="flex items-center justify-center gap-2 sm:gap-4">
-            <button onClick={() => navegar(-1)} disabled={idx === 0}
+            <button onClick={() => navegar(-1)} disabled={idxAtual === 0}
               className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-navy-700 text-navy-300 hover:bg-navy-800 disabled:opacity-30">
               <ChevronLeft size={18} />
             </button>
@@ -2211,12 +2210,12 @@ function ChequesPage({ db, hoje, index, go }) {
               </button>
             </div>
 
-            <button onClick={() => navegar(1)} disabled={idx === filtrados.length - 1}
+            <button onClick={() => navegar(1)} disabled={idxAtual === filtrados.length - 1}
               className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-navy-700 text-navy-300 hover:bg-navy-800 disabled:opacity-30">
               <ChevronRight size={18} />
             </button>
           </div>
-          <p className="text-center text-xs text-navy-500">{idx + 1} de {filtrados.length}</p>
+          <p className="text-center text-xs text-navy-500">{idxAtual + 1} de {filtrados.length}</p>
         </>
       )}
     </div>
